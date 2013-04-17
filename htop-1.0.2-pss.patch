@@ -1,0 +1,120 @@
+diff -Naur htop-1.0.2/Process.c htop-new/Process.c
+--- htop-1.0.2/Process.c	2012-10-19 18:44:44.000000000 -0700
++++ htop-new/Process.c	2012-12-31 08:09:57.000000000 -0700
+@@ -187,7 +187,7 @@
+    "UTIME", "STIME", "CUTIME", "CSTIME", "PRIORITY", "NICE", "ITREALVALUE",
+    "STARTTIME", "VSIZE", "RSS", "RLIM", "STARTCODE", "ENDCODE", "STARTSTACK",
+    "KSTKESP", "KSTKEIP", "SIGNAL", "BLOCKED", "SIGIGNORE", "SIGCATCH", "WCHAN",
+-   "NSWAP", "CNSWAP", "EXIT_SIGNAL", "PROCESSOR", "M_SIZE", "M_RESIDENT", "M_SHARE",
++   "NSWAP", "CNSWAP", "EXIT_SIGNAL", "PROCESSOR", "M_PSS", "M_SIZE", "M_RESIDENT", "M_SHARE",
+    "M_TRS", "M_DRS", "M_LRS", "M_DT", "ST_UID", "PERCENT_CPU", "PERCENT_MEM",
+    "USER", "TIME", "NLWP", "TGID", 
+ #ifdef HAVE_OPENVZ
+@@ -213,7 +213,7 @@
+    " UTIME+  ", " STIME+  ", " CUTIME+ ", " CSTIME+ ", "PRI ", " NI ", "- ",
+    "START ", "- ", "- ", "- ", "- ", "- ", "- ",
+    "- ", "- ", "- ", "- ", "- ", "- ", "- ",
+-   "- ", "- ", "- ", "CPU ", " VIRT ", "  RES ", "  SHR ",
++   "- ", "- ", "- ", "CPU ", "  PSS ", " VIRT ", "  RES ", "  SHR ",
+    " CODE ", " DATA ", " LIB ", " DIRTY ", " UID ", "CPU% ", "MEM% ",
+    "USER      ", "  TIME+  ", "NLWP ", "   TGID ",
+ #ifdef HAVE_OPENVZ
+@@ -453,6 +453,7 @@
+    case M_DT: Process_humanNumber(this, str, this->m_dt * PAGE_SIZE_KB); return;
+    case M_LRS: Process_humanNumber(this, str, this->m_lrs * PAGE_SIZE_KB); return;
+    case M_TRS: Process_humanNumber(this, str, this->m_trs * PAGE_SIZE_KB); return;
++   case M_PSS: Process_humanNumber(this, str, this->m_pss); return;
+    case M_SIZE: Process_humanNumber(this, str, this->m_size * PAGE_SIZE_KB); return;
+    case M_RESIDENT: Process_humanNumber(this, str, this->m_resident * PAGE_SIZE_KB); return;
+    case M_SHARE: Process_humanNumber(this, str, this->m_share * PAGE_SIZE_KB); return;
+@@ -729,6 +730,8 @@
+       return (p2->m_lrs - p1->m_lrs);
+    case M_TRS:
+       return (p2->m_trs - p1->m_trs);
++   case M_PSS:
++      return (p2->m_pss - p1->m_pss);
+    case M_SIZE:
+       return (p2->m_size - p1->m_size);
+    case M_RESIDENT:
+diff -Naur htop-1.0.2/Process.h htop-new/Process.h
+--- htop-1.0.2/Process.h	2012-10-19 18:44:50.000000000 -0700
++++ htop-new/Process.h	2012-12-31 08:11:57.000000000 -0700
+@@ -40,7 +40,7 @@
+    PID = 1, COMM, STATE, PPID, PGRP, SESSION, TTY_NR, TPGID, FLAGS, MINFLT, CMINFLT, MAJFLT, CMAJFLT, UTIME,
+    STIME, CUTIME, CSTIME, PRIORITY, NICE, ITREALVALUE, STARTTIME, VSIZE, RSS, RLIM, STARTCODE, ENDCODE,
+    STARTSTACK, KSTKESP, KSTKEIP, SIGNAL, BLOCKED, SSIGIGNORE, SIGCATCH, WCHAN, NSWAP, CNSWAP, EXIT_SIGNAL,
+-   PROCESSOR, M_SIZE, M_RESIDENT, M_SHARE, M_TRS, M_DRS, M_LRS, M_DT, ST_UID, PERCENT_CPU, PERCENT_MEM,
++   PROCESSOR, M_PSS, M_SIZE, M_RESIDENT, M_SHARE, M_TRS, M_DRS, M_LRS, M_DT, ST_UID, PERCENT_CPU, PERCENT_MEM,
+    USER, TIME, NLWP, TGID,
+    #ifdef HAVE_OPENVZ
+    CTID, VPID,
+@@ -116,6 +116,7 @@
+    #endif
+    int exit_signal;
+    int processor;
++   int m_pss;
+    int m_size;
+    int m_resident;
+    int m_share;
+diff -Naur htop-1.0.2/ProcessList.c htop-new/ProcessList.c
+--- htop-1.0.2/ProcessList.c	2012-10-19 17:41:15.000000000 -0700
++++ htop-new/ProcessList.c	2012-12-31 09:25:44.000000000 -0700
+@@ -24,6 +24,7 @@
+ #include <string.h>
+ #include <time.h>
+ #include <assert.h>
++#include <errno.h>
+ 
+ /*{
+ #include "Vector.h"
+@@ -498,6 +499,41 @@
+ 
+ #endif
+ 
++static bool ProcessList_readSmapsFile(Process* process, const char* dirname, const char* name) {
++   char *line = NULL;
++   size_t line_cap = 0;
++   int line_pss;
++   char filename[MAX_NAME+1];
++   snprintf(filename, MAX_NAME, "%s/%s/smaps", dirname, name);
++   FILE* file = fopen(filename, "r");
++   if (!file)
++      return false;
++
++   process->m_pss = 0;
++   while (-1 != getline(&line, &line_cap, file)) {
++      if (!strncmp(line, "Pss:", 4)) {
++         int num = sscanf(line, "Pss: %32d kB", &line_pss);
++         if (num != 1) {
++            fclose(file);
++            return false;
++         }
++         process->m_pss += line_pss;
++      }
++   }
++
++   free(line);
++   if (feof(file)) {
++      fclose(file);
++      return true;
++   }
++   if (ferror(file)) { // && errno == EPERM) {
++      fclose(file);
++      return true; /* ignore permission errors */
++   }
++   fclose(file);
++   return false;
++}
++
+ static bool ProcessList_readStatmFile(Process* process, const char* dirname, const char* name) {
+    char filename[MAX_NAME+1];
+    snprintf(filename, MAX_NAME, "%s/%s/statm", dirname, name);
+@@ -678,6 +714,8 @@
+ 
+       if (! ProcessList_readStatmFile(process, dirname, name))
+          goto errorReadingProcess;
++      if (! ProcessList_readSmapsFile(process, dirname, name))
++         goto errorReadingProcess;
+ 
+       process->show = ! ((hideKernelThreads && Process_isKernelThread(process)) || (hideUserlandThreads && Process_isUserlandThread(process)));
+ 
