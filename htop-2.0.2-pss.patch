@@ -53,15 +53,12 @@
     case STIME:  diff = p2->stime - p1->stime; goto test_diff;
 --- a/linux/LinuxProcessList.c
 +++ b/linux/LinuxProcessList.c
-@@ -332,6 +332,46 @@
-    process->m_dt = strtol(p, &p, 10);
+@@ -333,6 +333,41 @@
     return (errno == 0);
  }
-+static int once_in_10=0;
+ 
 +static bool LinuxProcessList_readSmapsFile(LinuxProcess* process, const char* dirname, const char* name) {
-+
-+   if(++once_in_10 < 10) return true;
-+   once_in_10=0;
++   
 +   size_t line_cap = MAX_NAME*10;//128*10
 +   int line_pss;
 +   char filename[MAX_NAME*10+1];//big enough buffer to read any line in smaps, so getline will not realoc it
@@ -72,20 +69,17 @@
 +      return false;
 +
 +   process->m_pss = 0;
-+   while (-1 != getline(&line, &line_cap, file)) {
-+      if (!strncmp(line, "Pss:", 4)) {
-+         int num = sscanf(line, "Pss: %32d kB", &line_pss);
-+         if (num != 1) {
-+            //~ free(line);
-+            fclose(file);
-+            return false;
-+         }
++   size_t nread;
++   while ( (nread = getline(&line, &line_cap, file)) != -1) {
++      if (!strncmp(filename, "Pss:", 4)) {
++         filename[nread]='\0';
++         line_pss = atoi(filename+4);//+4 skip Pss:
 +         process->m_pss += line_pss;
-+         //~ fseek(file,500,SEEK_CUR);
 +      }
 +   }
 +
-+   
++
++
 +   if (feof(file)) {
 +      fclose(file);
 +      return true;
@@ -97,18 +91,25 @@
 +   fclose(file);
 +   return false;
 +}
- 
++
  #ifdef HAVE_OPENVZ
  
-@@ -556,6 +596,8 @@
- 
+ static void LinuxProcessList_readOpenVZData(LinuxProcess* process, const char* dirname, const char* name) {
+@@ -557,6 +592,14 @@
        if (! LinuxProcessList_readStatmFile(lp, dirname, name))
           goto errorReadingProcess;
-+      if ((settings->flags &  PROCESS_FLAG_LINUX_PSS ) && ! LinuxProcessList_readSmapsFile(lp, dirname, name))
-+         goto errorReadingProcess;
  
++      if ((settings->flags &  PROCESS_FLAG_LINUX_PSS )){
++        if( !parent ){
++            LinuxProcessList_readSmapsFile(lp, dirname, name);
++        }else{
++            lp->m_pss = ((LinuxProcess*)parent)->m_pss;
++        }
++      }
++
        proc->show = ! ((hideKernelThreads && Process_isKernelThread(proc)) || (hideUserlandThreads && Process_isUserlandThread(proc)));
  
+       char command[MAX_NAME+1];
 --- a/linux/Platform.c
 +++ b/linux/Platform.c
 @@ -41,7 +41,7 @@
