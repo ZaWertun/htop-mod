@@ -30,7 +30,7 @@
  #endif
     [OOM] = { .name = "OOM", .title = "    OOM ", .description = "OOM (Out-of-Memory) killer score", .flags = PROCESS_FLAG_LINUX_OOM, },
     [IO_PRIORITY] = { .name = "IO_PRIORITY", .title = "IO ", .description = "I/O priority", .flags = PROCESS_FLAG_LINUX_IOPRIO, },
-+   [M_PSS] = { .name = "M_PSS", .title = "  PSS ", .description = "PSS set size, size of the text and data sections, plus stack usage", .flags = PROCESS_FLAG_LINUX_PSS, },  
++   [M_PSS] = { .name = "M_PSS", .title = "  PSS ", .description = "proportional set size, same as RSS but each page is divided by the number of processes sharing it.", .flags = PROCESS_FLAG_LINUX_PSS, },
     [LAST_PROCESSFIELD] = { .name = "*** report bug! ***", .title = NULL, .description = NULL, .flags = 0, },
  };
  
