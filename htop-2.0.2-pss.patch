@@ -1,0 +1,117 @@
+diff -Naur ./htop-2.0.2/linux/LinuxProcess.c ./htop-2.0.2_new/linux/LinuxProcess.c
+--- ./htop-2.0.2/linux/LinuxProcess.c	2018-01-12 16:05:54.000000000 +0300
++++ ./htop-2.0.2_new/linux/LinuxProcess.c	2018-01-12 16:05:02.000000000 +0300
+@@ -81,7 +81,8 @@
+    #endif
+    OOM = 114,
+    IO_PRIORITY = 115,
+-   LAST_PROCESSFIELD = 116,
++   M_PSS = 116,
++   LAST_PROCESSFIELD = 117,
+ } LinuxProcessField;
+ 
+ #include "IOPriority.h"
+@@ -96,6 +97,7 @@
+    unsigned long long int cutime;
+    unsigned long long int cstime;
+    long m_share;
++   long m_pss;
+    long m_trs;
+    long m_drs;
+    long m_lrs;
+@@ -214,6 +216,7 @@
+ #endif
+    [OOM] = { .name = "OOM", .title = "    OOM ", .description = "OOM (Out-of-Memory) killer score", .flags = PROCESS_FLAG_LINUX_OOM, },
+    [IO_PRIORITY] = { .name = "IO_PRIORITY", .title = "IO ", .description = "I/O priority", .flags = PROCESS_FLAG_LINUX_IOPRIO, },
++   [M_PSS] = { .name = "M_PSS", .title = "  PSS ", .description = "PSS set size, size of the text and data sections, plus stack usage", .flags = 0, },  
+    [LAST_PROCESSFIELD] = { .name = "*** report bug! ***", .title = NULL, .description = NULL, .flags = 0, },
+ };
+ 
+@@ -302,6 +305,7 @@
+    case M_LRS: Process_humanNumber(str, lp->m_lrs * PAGE_SIZE_KB, coloring); return;
+    case M_TRS: Process_humanNumber(str, lp->m_trs * PAGE_SIZE_KB, coloring); return;
+    case M_SHARE: Process_humanNumber(str, lp->m_share * PAGE_SIZE_KB, coloring); return;
++   case M_PSS: Process_humanNumber(str, lp->m_pss, coloring); return;
+    case UTIME: Process_printTime(str, lp->utime); return;
+    case STIME: Process_printTime(str, lp->stime); return;
+    case CUTIME: Process_printTime(str, lp->cutime); return;
+@@ -381,6 +385,8 @@
+       return (p2->m_trs - p1->m_trs);
+    case M_SHARE:
+       return (p2->m_share - p1->m_share);
++   case M_PSS:
++      return (p2->m_pss - p1->m_pss);
+    case UTIME:  diff = p2->utime - p1->utime; goto test_diff;
+    case CUTIME: diff = p2->cutime - p1->cutime; goto test_diff;
+    case STIME:  diff = p2->stime - p1->stime; goto test_diff;
+diff -Naur ./htop-2.0.2/linux/LinuxProcessList.c ./htop-2.0.2_new/linux/LinuxProcessList.c
+--- ./htop-2.0.2/linux/LinuxProcessList.c	2018-01-12 16:05:54.000000000 +0300
++++ ./htop-2.0.2_new/linux/LinuxProcessList.c	2018-01-12 15:59:31.000000000 +0300
+@@ -332,6 +332,46 @@
+    process->m_dt = strtol(p, &p, 10);
+    return (errno == 0);
+ }
++static int once_in_10=0;
++static bool LinuxProcessList_readSmapsFile(LinuxProcess* process, const char* dirname, const char* name) {
++
++   if(++once_in_10 < 10) return true;
++   once_in_10=0;
++   size_t line_cap = MAX_NAME*10;//128*10
++   int line_pss;
++   char filename[MAX_NAME*10+1];//big enough buffer to read any line in smaps, so getline will not realoc it
++   char *line = &filename;
++   snprintf(filename, MAX_NAME, "%s/%s/smaps", dirname, name);
++   FILE* file = fopen(filename, "r");
++   if (!file)
++      return false;
++
++   process->m_pss = 0;
++   while (-1 != getline(&line, &line_cap, file)) {
++      if (!strncmp(line, "Pss:", 4)) {
++         int num = sscanf(line, "Pss: %32d kB", &line_pss);
++         if (num != 1) {
++            //~ free(line);
++            fclose(file);
++            return false;
++         }
++         process->m_pss += line_pss;
++         //~ fseek(file,500,SEEK_CUR);
++      }
++   }
++
++   
++   if (feof(file)) {
++      fclose(file);
++      return true;
++   }
++   if (ferror(file)) { // && errno == EPERM) {
++      fclose(file);
++      return true; /* ignore permission errors */
++   }
++   fclose(file);
++   return false;
++}
+ 
+ #ifdef HAVE_OPENVZ
+ 
+@@ -556,6 +596,8 @@
+ 
+       if (! LinuxProcessList_readStatmFile(lp, dirname, name))
+          goto errorReadingProcess;
++      if (! LinuxProcessList_readSmapsFile(lp, dirname, name))
++         goto errorReadingProcess;
+ 
+       proc->show = ! ((hideKernelThreads && Process_isKernelThread(proc)) || (hideUserlandThreads && Process_isUserlandThread(proc)));
+ 
+diff -Naur ./htop-2.0.2/linux/Platform.c ./htop-2.0.2_new/linux/Platform.c
+--- ./htop-2.0.2/linux/Platform.c	2016-02-02 17:58:45.000000000 +0300
++++ ./htop-2.0.2_new/linux/Platform.c	2018-01-12 15:45:28.000000000 +0300
+@@ -41,7 +41,7 @@
+ #define CLAMP(x,low,high) (((x)>(high))?(high):(((x)<(low))?(low):(x)))
+ #endif
+ 
+-ProcessField Platform_defaultFields[] = { PID, USER, PRIORITY, NICE, M_SIZE, M_RESIDENT, M_SHARE, STATE, PERCENT_CPU, PERCENT_MEM, TIME, COMM, 0 };
++ProcessField Platform_defaultFields[] = { PID, USER, PRIORITY, NICE, M_SIZE, M_RESIDENT, M_PSS, M_SHARE, STATE, PERCENT_CPU, PERCENT_MEM, TIME, COMM, 0 };
+ 
+ //static ProcessField defaultIoFields[] = { PID, IO_PRIORITY, USER, IO_READ_RATE, IO_WRITE_RATE, IO_RATE, COMM, 0 };
+ 

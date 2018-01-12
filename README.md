@@ -3,7 +3,7 @@ htop-mod
 
 patch(es) for htop (open source process viewer for Linux) 
 
-htop-1.0.2-pss.patch
+htop-2.0.2-pss.patch
 --------------------
 
 This patch adds a PSS (proportional set size) field to htop.
@@ -20,3 +20,6 @@ i3-2350M processor, htop running with the PSS patch consumes about 20% of one
 CPU. That's with an htop refresh rate (delay) of 1.5 seconds and about 60
 processes running. More processes means more CPU use.
 
+PPA
+---
+For ubuntu patched htop available here https://launchpad.net/~linvinus/+archive/ubuntu/linvinus
