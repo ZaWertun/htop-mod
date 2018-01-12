@@ -1,7 +1,14 @@
-diff -Naur ./htop-2.0.2/linux/LinuxProcess.c ./htop-2.0.2_new/linux/LinuxProcess.c
---- ./htop-2.0.2/linux/LinuxProcess.c	2018-01-12 16:05:54.000000000 +0300
-+++ ./htop-2.0.2_new/linux/LinuxProcess.c	2018-01-12 16:05:02.000000000 +0300
-@@ -81,7 +81,8 @@
+--- a/linux/LinuxProcess.c
++++ b/linux/LinuxProcess.c
+@@ -23,6 +23,7 @@
+ #define PROCESS_FLAG_LINUX_VSERVER  0x0400
+ #define PROCESS_FLAG_LINUX_CGROUP   0x0800
+ #define PROCESS_FLAG_LINUX_OOM      0x1000
++#define PROCESS_FLAG_LINUX_PSS      0x2000
+ 
+ typedef enum UnsupportedProcessFields {
+    FLAGS = 9,
+@@ -81,7 +82,8 @@
     #endif
     OOM = 114,
     IO_PRIORITY = 115,
@@ -11,7 +18,7 @@ diff -Naur ./htop-2.0.2/linux/LinuxProcess.c ./htop-2.0.2_new/linux/LinuxProcess
  } LinuxProcessField;
  
  #include "IOPriority.h"
-@@ -96,6 +97,7 @@
+@@ -96,6 +98,7 @@
     unsigned long long int cutime;
     unsigned long long int cstime;
     long m_share;
@@ -19,15 +26,15 @@ diff -Naur ./htop-2.0.2/linux/LinuxProcess.c ./htop-2.0.2_new/linux/LinuxProcess
     long m_trs;
     long m_drs;
     long m_lrs;
-@@ -214,6 +216,7 @@
+@@ -214,6 +217,7 @@
  #endif
     [OOM] = { .name = "OOM", .title = "    OOM ", .description = "OOM (Out-of-Memory) killer score", .flags = PROCESS_FLAG_LINUX_OOM, },
     [IO_PRIORITY] = { .name = "IO_PRIORITY", .title = "IO ", .description = "I/O priority", .flags = PROCESS_FLAG_LINUX_IOPRIO, },
-+   [M_PSS] = { .name = "M_PSS", .title = "  PSS ", .description = "PSS set size, size of the text and data sections, plus stack usage", .flags = 0, },  
++   [M_PSS] = { .name = "M_PSS", .title = "  PSS ", .description = "PSS set size, size of the text and data sections, plus stack usage", .flags = PROCESS_FLAG_LINUX_PSS, },  
     [LAST_PROCESSFIELD] = { .name = "*** report bug! ***", .title = NULL, .description = NULL, .flags = 0, },
  };
  
-@@ -302,6 +305,7 @@
+@@ -302,6 +306,7 @@
     case M_LRS: Process_humanNumber(str, lp->m_lrs * PAGE_SIZE_KB, coloring); return;
     case M_TRS: Process_humanNumber(str, lp->m_trs * PAGE_SIZE_KB, coloring); return;
     case M_SHARE: Process_humanNumber(str, lp->m_share * PAGE_SIZE_KB, coloring); return;
@@ -35,7 +42,7 @@ diff -Naur ./htop-2.0.2/linux/LinuxProcess.c ./htop-2.0.2_new/linux/LinuxProcess
     case UTIME: Process_printTime(str, lp->utime); return;
     case STIME: Process_printTime(str, lp->stime); return;
     case CUTIME: Process_printTime(str, lp->cutime); return;
-@@ -381,6 +385,8 @@
+@@ -381,6 +386,8 @@
        return (p2->m_trs - p1->m_trs);
     case M_SHARE:
        return (p2->m_share - p1->m_share);
@@ -44,9 +51,8 @@ diff -Naur ./htop-2.0.2/linux/LinuxProcess.c ./htop-2.0.2_new/linux/LinuxProcess
     case UTIME:  diff = p2->utime - p1->utime; goto test_diff;
     case CUTIME: diff = p2->cutime - p1->cutime; goto test_diff;
     case STIME:  diff = p2->stime - p1->stime; goto test_diff;
-diff -Naur ./htop-2.0.2/linux/LinuxProcessList.c ./htop-2.0.2_new/linux/LinuxProcessList.c
---- ./htop-2.0.2/linux/LinuxProcessList.c	2018-01-12 16:05:54.000000000 +0300
-+++ ./htop-2.0.2_new/linux/LinuxProcessList.c	2018-01-12 15:59:31.000000000 +0300
+--- a/linux/LinuxProcessList.c
++++ b/linux/LinuxProcessList.c
 @@ -332,6 +332,46 @@
     process->m_dt = strtol(p, &p, 10);
     return (errno == 0);
@@ -98,14 +104,13 @@ diff -Naur ./htop-2.0.2/linux/LinuxProcessList.c ./htop-2.0.2_new/linux/LinuxPro
  
        if (! LinuxProcessList_readStatmFile(lp, dirname, name))
           goto errorReadingProcess;
-+      if (! LinuxProcessList_readSmapsFile(lp, dirname, name))
++      if ((settings->flags &  PROCESS_FLAG_LINUX_PSS ) && ! LinuxProcessList_readSmapsFile(lp, dirname, name))
 +         goto errorReadingProcess;
  
        proc->show = ! ((hideKernelThreads && Process_isKernelThread(proc)) || (hideUserlandThreads && Process_isUserlandThread(proc)));
  
-diff -Naur ./htop-2.0.2/linux/Platform.c ./htop-2.0.2_new/linux/Platform.c
---- ./htop-2.0.2/linux/Platform.c	2016-02-02 17:58:45.000000000 +0300
-+++ ./htop-2.0.2_new/linux/Platform.c	2018-01-12 15:45:28.000000000 +0300
+--- a/linux/Platform.c
++++ b/linux/Platform.c
 @@ -41,7 +41,7 @@
  #define CLAMP(x,low,high) (((x)>(high))?(high):(((x)<(low))?(low):(x)))
  #endif
