@@ -48,3 +48,9 @@ For ubuntu patched htop available here https://launchpad.net/~linvinus/+archive/
 Screenshot
 ----------
 ![screenshot](screenshot.png?raw=true)
+
+Other
+-----
+Other tools that show PSS
+
+**smem** https://www.2daygeek.com/smem-linux-memory-usage-statistics-reporting-tool/#
