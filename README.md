@@ -12,6 +12,15 @@ PSS is a newish per-process memory stat in Linux (added in version 2.6.25 of the
 kernel) that estimates how much memory a process really uses, after taking into
 account how many other processes share memory with it.
 
+Description on wikipedia
+
+https://en.wikipedia.org/wiki/Proportional_set_size
+
+Article on LWN
+
+https://lwn.net/Articles/230975/
+
+
 For more info please read description of /proc/PID/smaps file.
 
 https://www.kernel.org/doc/Documentation/filesystems/proc.txt
