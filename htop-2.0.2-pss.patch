@@ -53,7 +53,7 @@
     case STIME:  diff = p2->stime - p1->stime; goto test_diff;
 --- a/linux/LinuxProcessList.c
 +++ b/linux/LinuxProcessList.c
-@@ -333,6 +333,62 @@
+@@ -333,6 +333,65 @@
     return (errno == 0);
  }
  
@@ -86,6 +86,9 @@
 +                        bptr_start+=23; //add value lenght
 +                        if(tmp_nread > 512){
 +                          bptr_start += 512;//skip 512 chars, there will not be Pss:
++                        }else{
++                          tmp_nread=0;
++                          break;//read next 4k block
 +                        }
 +
 +                        continue;//find next in this 4k block
@@ -116,7 +119,7 @@
  #ifdef HAVE_OPENVZ
  
  static void LinuxProcessList_readOpenVZData(LinuxProcess* process, const char* dirname, const char* name) {
-@@ -557,6 +613,14 @@
+@@ -557,6 +616,14 @@
        if (! LinuxProcessList_readStatmFile(lp, dirname, name))
           goto errorReadingProcess;
  
