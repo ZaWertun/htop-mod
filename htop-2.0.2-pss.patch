@@ -94,10 +94,10 @@
 +                        continue;
 +                    }
 +                }else{//not enought bytes, copy rest and read next block
-+                    //rollback by one char,we need to know what was before 'P' in next cycle
-+                    bptr_start--;
-+                    tmp_nread++;
 +                    if(tmp_nread > 0){
++                        //rollback by one char,we need to know what was before 'P' in next cycle
++                        bptr_start--;
++                        tmp_nread++;
 +                        memcpy(buffer,bptr_start,tmp_nread);
 +                    }else
 +                        tmp_nread=0;
