@@ -26,6 +26,11 @@ i3-2350M processor, htop running with the PSS patch consumes about 20% of one
 CPU. That's with an htop refresh rate (delay) of 1.5 seconds and about 60
 processes running. More processes means more CPU use.~~
 
+Performance tests
+-----------------
+When PSS column is hidden, one cycle of LinuxProcessList_recurseProcTree took 20ms, on 181 total tasks (user/kernel threads are disabled).
+
+When PSS column is visible, one cycle of LinuxProcessList_recurseProcTree took 200ms, on 181 total tasks,  10 times slower but not significally.
 
 PPA
 ---
