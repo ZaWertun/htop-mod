@@ -12,6 +12,10 @@ PSS is a newish per-process memory stat in Linux (added in version 2.6.25 of the
 kernel) that estimates how much memory a process really uses, after taking into
 account how many other processes share memory with it.
 
+For more info please read description of /proc/PID/smaps file.
+
+https://www.kernel.org/doc/Documentation/filesystems/proc.txt
+
 This problem resolved now.
 
 ~~There's a downside to calculating PSS in htop, and that's that it causes htop to
@@ -27,4 +31,6 @@ PPA
 ---
 For ubuntu patched htop available here https://launchpad.net/~linvinus/+archive/ubuntu/linvinus
 
-
+Screenshot
+----------
+![screenshot](screenshot.png?raw=true)
