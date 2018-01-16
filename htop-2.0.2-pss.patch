@@ -53,54 +53,75 @@
     case STIME:  diff = p2->stime - p1->stime; goto test_diff;
 --- a/linux/LinuxProcessList.c
 +++ b/linux/LinuxProcessList.c
-@@ -333,6 +333,41 @@
+@@ -333,6 +333,62 @@
     return (errno == 0);
  }
  
 +static bool LinuxProcessList_readSmapsFile(LinuxProcess* process, const char* dirname, const char* name) {
-+   
-+   size_t line_cap = MAX_NAME*10;//128*10
 +   int line_pss;
-+   char filename[MAX_NAME*10+1];//big enough buffer to read any line in smaps, so getline will not realoc it
-+   char *line = &filename;
-+   snprintf(filename, MAX_NAME, "%s/%s/smaps", dirname, name);
-+   FILE* file = fopen(filename, "r");
-+   if (!file)
++   char buffer[4*1024+1];// 4k
++   char *bptr,*bptr_start;
++   ssize_t nread=0,tmp_nread=0;
++   snprintf(buffer, MAX_NAME, "%s/%s/smaps", dirname, name);
++   int fd = open(buffer, O_RDONLY);
++   if (fd == -1)
 +      return false;
 +
 +   process->m_pss = 0;
-+   size_t nread;
-+   while ( (nread = getline(&line, &line_cap, file)) != -1) {
-+      if (!strncmp(filename, "Pss:", 4)) {
-+         filename[nread]='\0';
-+         line_pss = atoi(filename+4);//+4 skip Pss:
-+         process->m_pss += line_pss;
-+      }
-+   }
++   
++   //~ uint64_t tstart = g_get_monotonic_time ();
++   //~ if (strcmp(name, "2446") == 0)
++   while ( (nread =  read(fd,buffer+tmp_nread, (sizeof(buffer)-1)-tmp_nread)) > 0 ){
++        bptr_start = bptr = &buffer;
++        nread +=tmp_nread;
++        tmp_nread=0;
++        do{//parse 4k block
++            if( (bptr_start = memchr(bptr_start, 'P', (nread - (bptr_start - bptr)) )) > 0 ){
++                tmp_nread = (nread - (bptr_start - bptr));
++                if(tmp_nread > 23){
++                    if( *(bptr_start-1) == '\n' && *++bptr_start == 's' && *++bptr_start ==  's' && *++bptr_start ==  ':'){
++                        line_pss = atoi(++bptr_start);
++                        process->m_pss += line_pss;
++                        tmp_nread-=23;
++                        bptr_start+=23; //add value lenght
++                        if(tmp_nread > 512){
++                          bptr_start += 512;//skip 512 chars, there will not be Pss:
++                        }
 +
-+
-+
-+   if (feof(file)) {
-+      fclose(file);
-+      return true;
-+   }
-+   if (ferror(file)) { // && errno == EPERM) {
-+      fclose(file);
-+      return true; /* ignore permission errors */
-+   }
-+   fclose(file);
-+   return false;
++                        continue;//find next in this 4k block
++                    }else{
++                        bptr_start++;//mismatch
++                        continue;
++                    }
++                }else{//not enought bytes, copy rest and read next block
++                    //rollback by one char,we need to know what was before 'P' in next cycle
++                    bptr_start--;
++                    tmp_nread++;
++                    if(tmp_nread > 0){
++                        memcpy(buffer,bptr_start,tmp_nread);
++                    }else
++                        tmp_nread=0;
++                    break;//read next 4k block
++                }
++            }else{
++                break;//read next 4k block
++            }
++        }while(1);
++   }//while read
++  //~ process->m_pss = (g_get_monotonic_time ()-tstart)/1000;
++   close(fd);
++   return true;
 +}
 +
  #ifdef HAVE_OPENVZ
  
  static void LinuxProcessList_readOpenVZData(LinuxProcess* process, const char* dirname, const char* name) {
-@@ -557,6 +592,14 @@
+@@ -557,6 +613,14 @@
        if (! LinuxProcessList_readStatmFile(lp, dirname, name))
           goto errorReadingProcess;
  
-+      if ((settings->flags &  PROCESS_FLAG_LINUX_PSS )){
-+        if( !parent ){
++      if ((settings->flags &  PROCESS_FLAG_LINUX_PSS ) && !Process_isKernelThread(proc)){
++        if( !parent){
 +            LinuxProcessList_readSmapsFile(lp, dirname, name);
 +        }else{
 +            lp->m_pss = ((LinuxProcess*)parent)->m_pss;
