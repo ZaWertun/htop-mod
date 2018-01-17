@@ -54,3 +54,9 @@ Other
 Other tools that show PSS
 
 **smem** https://www.2daygeek.com/smem-linux-memory-usage-statistics-reporting-tool/#
+
+**libpagemap** https://github.com/pholasek/libpagemap
+
+there was a patch based on libpagemap for htop-0.9-3.fc16.src.rpm
+
+https://github.com/dwks/pagemap
