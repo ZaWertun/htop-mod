@@ -101,7 +101,7 @@
 +                          if(tmp_nread > 28*11){//308
 +                            bptr_start+=28*10;//10 lines bottom
 +                            if( memcmp(bptr_start+1,"Swap:",5) == 0){// Swap:                  0 kB
-+                              process->m_swap += atoi((bptr_start+9));
++                              process->m_swap += atoi((bptr_start+6));
 +                            }
 +                            bptr_start-=28*10;
 +                          }
