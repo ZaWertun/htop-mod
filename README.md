@@ -6,7 +6,10 @@ patch(es) for htop (open source process viewer for Linux)
 htop-2.0.2-pss.patch
 --------------------
 
-This patch adds a PSS (proportional set size) field to htop.
+This patch adds a
+  * PSS (proportional set size) field to htop.
+  * SWAP
+  * SwapPss
 
 PSS is a newish per-process memory stat in Linux (added in version 2.6.25 of the
 kernel) that estimates how much memory a process really uses, after taking into
