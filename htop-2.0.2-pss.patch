@@ -53,11 +53,109 @@
     case STIME:  diff = p2->stime - p1->stime; goto test_diff;
 --- a/linux/LinuxProcessList.c
 +++ b/linux/LinuxProcessList.c
-@@ -333,6 +333,65 @@
+@@ -333,6 +333,163 @@
     return (errno == 0);
  }
  
++int handle_virtual_range(int pagemap, unsigned long start_address,
++    unsigned long end_address) {
++    int mpss=0;
++    for(unsigned long i = start_address; i < end_address; i += 0x1000) {
++        unsigned long data;
++        unsigned long index = (i / PAGE_SIZE) * sizeof(data);
++        if(pread(pagemap, &data, sizeof(data), index) != sizeof(data)) {
++                if(errno) perror("pread");
++                break;
++        }
++        mpss++;
++    }
++    return mpss;
++}
++
++
++static unsigned long parse_hex(char **buf){
++    unsigned long low = 0;
++    const char *end=*buf+16;
++    while(*buf < end ) {
++        low *= 16;
++        char c = **buf;
++        if(c >= '0' && c <= '9') {
++            low += c - '0';
++        }
++        else if(c >= 'a' && c <= 'f') {
++            low += c - 'a' + 10;
++        }
++        else break;
++        (*buf)++;
++    }
++    return low;
++}
++
 +static bool LinuxProcessList_readSmapsFile(LinuxProcess* process, const char* dirname, const char* name) {
++
++if (!(strcmp(name, "2446") == 0 || strcmp(name, "2492") == 0)) return false;
++    char buffer[4*1024+1];// 4k
++    snprintf(buffer, MAX_NAME,
++        "%s/%s/maps",dirname, name);
++    int maps = open(buffer, O_RDONLY);
++    if(maps < 0) return false;
++
++    snprintf(buffer, MAX_NAME,
++        "%s/%s/pagemap",dirname, name);
++
++
++    int pagemap = open(buffer, O_RDONLY);
++    if(pagemap < 0) {
++        close(maps);
++        return false;
++    }
++
++    //~ char buffer[BUFSIZ];
++    int offset = 0;
++    process->m_pss = 0;
++
++    for(;;) {
++        ssize_t length = read(maps, buffer + offset, sizeof buffer - offset);
++        if(length <= 0) break;
++
++        length += offset;
++        offset=0;
++        char *bptr = &buffer;
++        char *bptr_start = bptr;
++        char *bptr_end = bptr;
++        do{
++            unsigned long low = 0, high = 0;
++            
++            do{
++                low=parse_hex(&bptr_start);
++                if(*bptr_start!='-') break;
++                bptr_start++;
++                high=parse_hex(&bptr_start);
++                if(*bptr_start!=' ') break;
++                bptr_start++;
++                process->m_pss += handle_virtual_range(pagemap, low, high);
++            }while(0);
++            offset=(length - (bptr_start - bptr));
++            if( offset >0 && (bptr_end = memchr(bptr_start, '\n', offset )) > 0 ){
++                if((length - (bptr_end - bptr))>34){
++                    bptr_start=++bptr_end;
++                    continue;
++                }
++            }
++            
++            if(offset > 0)
++                memcpy(buffer,bptr_start,offset);
++            else
++                offset=0;
++            break;
++        }while(1);
++    }
++
++    close(maps);
++    close(pagemap);
++}
++
++static bool LinuxProcessList_readSmapsFile2(LinuxProcess* process, const char* dirname, const char* name) {
 +   int line_pss;
 +   char buffer[4*1024+1];// 4k
 +   char *bptr,*bptr_start;
@@ -119,7 +217,7 @@
  #ifdef HAVE_OPENVZ
  
  static void LinuxProcessList_readOpenVZData(LinuxProcess* process, const char* dirname, const char* name) {
-@@ -557,6 +616,14 @@
+@@ -557,6 +714,14 @@
        if (! LinuxProcessList_readStatmFile(lp, dirname, name))
           goto errorReadingProcess;
  
