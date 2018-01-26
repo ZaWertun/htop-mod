@@ -65,14 +65,15 @@
     case STIME:  diff = p2->stime - p1->stime; goto test_diff;
 --- a/linux/LinuxProcessList.c
 +++ b/linux/LinuxProcessList.c
-@@ -333,6 +333,83 @@
+@@ -333,6 +333,54 @@
     return (errno == 0);
  }
  
 +static bool LinuxProcessList_readSmapsFile(LinuxProcess* process, const char* dirname, const char* name) {
 +   char buffer[4*1024+1];// 4k
-+   char *bptr,*bptr_start;
-+   ssize_t nread=0,tmp_nread=0;
++   char *bptr_start,*bptr_end;
++   ssize_t nread=0;
++   int tmp=0;
 +   snprintf(buffer, MAX_NAME, "%s/%s/smaps", dirname, name);
 +   int fd = open(buffer, O_RDONLY);
 +   if (fd == -1)
@@ -84,61 +85,31 @@
 +   
 +   //~ uint64_t tstart = g_get_monotonic_time ();
 +   //~ if (strcmp(name, "2446") == 0)
-+   while ( (nread =  read(fd,buffer+tmp_nread, (sizeof(buffer)-1)-tmp_nread)) > 0 ){
-+        bptr_start = bptr = &buffer;
-+        nread +=tmp_nread;
-+        tmp_nread=0;
++   while ( (nread =  read(fd,buffer, (sizeof(buffer)-1))) > 0 ){
++        bptr_start = &buffer;
++        bptr_end   = bptr_start + nread;
 +        do{//parse 4k block
-+            if( (bptr_start = memchr(bptr_start, 'P', (nread - (bptr_start - bptr)) )) > 0 ){
-+                tmp_nread = (nread - (bptr_start - bptr));
-+                if(tmp_nread > 27){
-+                    if( memcmp((bptr_start-1),"\nPss:",5) == 0){
-+                        process->m_pss += atoi(bptr_start+4);
-+                        tmp_nread-=27;
-+                        bptr_start+=27;//now we must be at the end of line "Pss:                   0 kB"
-+                        
-+                        if(*bptr_start == '\n'){
-+                          if(tmp_nread > 28*11){//308
-+                            bptr_start+=28*10;//10 lines bottom
-+                            if( memcmp(bptr_start+1,"Swap:",5) == 0){// Swap:                  0 kB
-+                              process->m_swap += atoi((bptr_start+6));
-+                            }
-+                            bptr_start-=28*10;
-+                          }
-+                          
-+                          if(tmp_nread > 28*12){//336
-+                            bptr_start+=28*11;
-+                            if( memcmp(bptr_start+1,"SwapPss:",8) == 0){// SwapPss:               0 kB
-+                              process->m_psswp += atoi((bptr_start+9));
-+                            }
-+                            bptr_start-=28*11;
-+                          }
-+                        }//if \n
-+                        if(tmp_nread > 512){
-+                          bptr_start += 512;//skip 512 chars, there will not be Pss:
-+                        }else{
-+                          tmp_nread=0;
-+                          break;//read next 4k block
-+                        }
 +
-+                        continue;//find next in this 4k block
-+                    }else{
-+                        bptr_start++;//mismatch
-+                        continue;
-+                    }
-+                }else{//not enought bytes, copy rest and read next block
-+                    if(tmp_nread > 0){
-+                        //rollback by one char,we need to know what was before 'P' in next cycle
-+                        bptr_start--;
-+                        tmp_nread++;
-+                        memcpy(buffer,bptr_start,tmp_nread);
-+                    }else
-+                        tmp_nread=0;
-+                    break;//read next 4k block
-+                }
-+            }else{
-+                break;//read next 4k block
-+            }
++            if( (tmp = (bptr_end - bptr_start)) >0 &&
++                (bptr_start = memmem(bptr_start,tmp,"\nPss:",5)) >0 )
++            {
++                process->m_pss += strtol(bptr_start+5,&bptr_start,10);
++                bptr_start+=3;//now we must be at the end of line "Pss:                   0 kB"
++                
++                if( (tmp = (bptr_end - bptr_start)) >0 &&
++                    (bptr_start = memmem(bptr_start,tmp,"\nSwap:",6)) >0 ){
++                            process->m_swap += strtol(bptr_start+6,&bptr_start,10);
++                            bptr_start+=3;//now we must be at the end of line "Swap:                   0 kB"
++                }else break;
++                
++                
++                if( (tmp = (bptr_end - bptr_start)) >0 &&
++                    (bptr_start = memmem(bptr_start,tmp,"\nSwapPss:",9)) >0 ){
++                            process->m_psswp += strtol(bptr_start+9,&bptr_start,10);
++                            bptr_start+=3;//now we must be at the end of line "SwapPss:                   0 kB"
++                }else break;
++
++            }else break;//read next 4k block
 +        }while(1);
 +   }//while read
 +  //~ process->m_pss = (g_get_monotonic_time ()-tstart)/1000;
@@ -149,7 +120,7 @@
  #ifdef HAVE_OPENVZ
  
  static void LinuxProcessList_readOpenVZData(LinuxProcess* process, const char* dirname, const char* name) {
-@@ -557,6 +634,14 @@
+@@ -557,6 +605,14 @@
        if (! LinuxProcessList_readStatmFile(lp, dirname, name))
           goto errorReadingProcess;
  
