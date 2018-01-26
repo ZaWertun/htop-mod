@@ -65,13 +65,16 @@
     case STIME:  diff = p2->stime - p1->stime; goto test_diff;
 --- a/linux/LinuxProcessList.c
 +++ b/linux/LinuxProcessList.c
-@@ -333,6 +333,54 @@
+@@ -333,6 +333,58 @@
     return (errno == 0);
  }
  
 +static bool LinuxProcessList_readSmapsFile(LinuxProcess* process, const char* dirname, const char* name) {
-+   char buffer[4*1024+1];// 4k
-+   char *bptr_start,*bptr_end;
++   //http://elixir.free-electrons.com/linux/v4.10/source/fs/proc/task_mmu.c#L719
++   //kernel will return data in chunks of size PAGE_SIZE or less.
++
++   char buffer[PAGE_SIZE];// 4k
++   char *start,*end;
 +   ssize_t nread=0;
 +   int tmp=0;
 +   snprintf(buffer, MAX_NAME, "%s/%s/smaps", dirname, name);
@@ -79,40 +82,41 @@
 +   if (fd == -1)
 +      return false;
 +
-+   process->m_pss = 0;
-+   process->m_swap = 0;
++   process->m_pss   = 0;
++   process->m_swap  = 0;
 +   process->m_psswp = 0;
-+   
-+   //~ uint64_t tstart = g_get_monotonic_time ();
-+   //~ if (strcmp(name, "2446") == 0)
-+   while ( (nread =  read(fd,buffer, (sizeof(buffer)-1))) > 0 ){
-+        bptr_start = &buffer;
-+        bptr_end   = bptr_start + nread;
++
++   while ( ( nread =  read(fd,buffer, sizeof(buffer)) ) > 0 ){
++        start = (char *)&buffer;
++        end   = start + nread;
 +        do{//parse 4k block
 +
-+            if( (tmp = (bptr_end - bptr_start)) >0 &&
-+                (bptr_start = memmem(bptr_start,tmp,"\nPss:",5)) >0 )
++            if( (tmp = (end - start)) > 0 &&
++                (start = memmem(start,tmp,"\nPss:",5)) != NULL )
 +            {
-+                process->m_pss += strtol(bptr_start+5,&bptr_start,10);
-+                bptr_start+=3;//now we must be at the end of line "Pss:                   0 kB"
-+                
-+                if( (tmp = (bptr_end - bptr_start)) >0 &&
-+                    (bptr_start = memmem(bptr_start,tmp,"\nSwap:",6)) >0 ){
-+                            process->m_swap += strtol(bptr_start+6,&bptr_start,10);
-+                            bptr_start+=3;//now we must be at the end of line "Swap:                   0 kB"
-+                }else break;
-+                
-+                
-+                if( (tmp = (bptr_end - bptr_start)) >0 &&
-+                    (bptr_start = memmem(bptr_start,tmp,"\nSwapPss:",9)) >0 ){
-+                            process->m_psswp += strtol(bptr_start+9,&bptr_start,10);
-+                            bptr_start+=3;//now we must be at the end of line "SwapPss:                   0 kB"
-+                }else break;
++              process->m_pss += strtol(start+5, &start, 10);
++              start += 3;//now we must be at the end of line "Pss:                   0 kB"
++            }else
++              break; //read next 4k block
 +
-+            }else break;//read next 4k block
++            if( (tmp = (end - start)) > 0 &&
++                (start = memmem(start,tmp,"\nSwap:",6)) != NULL )
++            {
++              process->m_swap += strtol(start+6, &start, 10);
++              start += 3;
++            }else
++              break;
++
++            if( (tmp = (end - start)) > 0 &&
++                (start = memmem(start,tmp,"\nSwapPss:",9)) != NULL )
++            {
++              process->m_psswp += strtol(start+9, &start, 10);
++              start += 3;
++            }else
++              break;
++
 +        }while(1);
 +   }//while read
-+  //~ process->m_pss = (g_get_monotonic_time ()-tstart)/1000;
 +   close(fd);
 +   return true;
 +}
@@ -120,7 +124,7 @@
  #ifdef HAVE_OPENVZ
  
  static void LinuxProcessList_readOpenVZData(LinuxProcess* process, const char* dirname, const char* name) {
-@@ -557,6 +605,14 @@
+@@ -557,6 +609,14 @@
        if (! LinuxProcessList_readStatmFile(lp, dirname, name))
           goto errorReadingProcess;
  
