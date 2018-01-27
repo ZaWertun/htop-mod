@@ -124,13 +124,17 @@
  #ifdef HAVE_OPENVZ
  
  static void LinuxProcessList_readOpenVZData(LinuxProcess* process, const char* dirname, const char* name) {
-@@ -557,6 +609,14 @@
+@@ -557,6 +609,18 @@
        if (! LinuxProcessList_readStatmFile(lp, dirname, name))
           goto errorReadingProcess;
  
 +      if ((settings->flags &  PROCESS_FLAG_LINUX_SMAPS ) && !Process_isKernelThread(proc)){
 +        if( !parent){
-+            LinuxProcessList_readSmapsFile(lp, dirname, name);
++            static int smaps_flag = 0;
++            if((pid & 1U) == smaps_flag){
++              LinuxProcessList_readSmapsFile(lp, dirname, name);
++            }
++            if(pid == 1U) smaps_flag = !smaps_flag;
 +        }else{
 +            lp->m_pss = ((LinuxProcess*)parent)->m_pss;
 +        }
