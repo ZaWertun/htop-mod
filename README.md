@@ -3,7 +3,7 @@ htop-mod
 
 patch(es) for htop (open source process viewer for Linux) 
 
-htop-2.0.2-pss.patch
+htop-2.1.0-pss.patch
 --------------------
 
 This patch adds a
